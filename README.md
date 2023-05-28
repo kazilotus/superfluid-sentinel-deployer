@@ -1,7 +1,11 @@
 
 # Superfluid Sentinel Deployer
 
-Welcome to the Superfluid Sentinel Deployer project! This repository contains the code and configurations to deploy and manage infrastructure using Terraform for the Superfluid application. In this document, you will find information on the project structure, workflows, setup instructions, and more.
+![Init](https://github.com/kazilotus/superfluid-sentinel-deployer/actions/workflows/0.init.yml/badge.svg)
+
+Welcome to the Superfluid Sentinel Deployer project! This repository contains the code and configurations to deploy and manage infrastructure using Terraform for the [Superfluid Sentinel](https://github.com/superfluid-finance/superfluid-sentinel). In this document, you will find information on the project structure, workflows, setup instructions, and more.
+
+![Sentinel Log](https://github.com/kazilotus/superfluid-sentinel-deployer/assets/11974463/c48fce5c-fec1-4749-b861-ccb697e001d3)
 
 ## Introduction
 
@@ -18,6 +22,8 @@ Let's take a look at the structure of the Superfluid Sentinel project:
 The project is organized in a way that makes it easy to navigate and understand. Now that you know the project structure, let's dive into the workflows.
 
 ## Workflow Descriptions
+
+![image](https://github.com/kazilotus/superfluid-sentinel-deployer/assets/11974463/2680652f-9c23-4837-9136-84eb8f814d7c)
 
 We have several GitHub Actions workflows that handle different tasks in our CI/CD pipeline. Here's an overview of each workflow:
 
