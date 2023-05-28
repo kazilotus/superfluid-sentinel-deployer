@@ -1,0 +1,47 @@
+################################################################################
+# This workflow is responsible for setting up the Terraform backend.
+# It creates the necessary AWS S3 bucket and DynamoDB table for storing Terraform state and handling locking.
+#
+# It is meant to be run manually via 'workflow_dispatch' and should only be run once to initialize the project.
+# Upon successful setup, it triggers another workflow (2.infra.yml) to handle the infrastructure setup.
+################################################################################
+
+
+name: 0. Setup Terraform Backend for State Locking
+
+on:
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  TF_BUCKET_NAME: superfluid-tf-state-bucket
+  TF_TABLE_NAME: superfluid-tf-lock-table
+jobs:
+  tf_backend:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: pip install boto3
+
+      - name: Execute setup script
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+          TFSTATE_BUCKET: ${{ env.TF_BUCKET_NAME }}
+          TFSTATE_LOCK_TABLE: ${{ env.TF_TABLE_NAME }}
+        run: python ./.github/scripts/setup.py
+
+  infra:
+    needs: tf_backend
+    uses: ./.github/workflows/2.infra.yml
+    secrets: inherit

@@ -1,0 +1,77 @@
+################################################################################
+# This workflow is used for deploying infrastructure using Terraform.
+# It expects to be called from another workflow and does not trigger on any 
+# GitHub event natively.
+#
+# It initializes Terraform, plans the deployment using the provided variables, 
+# and applies the changes. The AWS infrastructure is assumed.
+#
+# Upon successful infrastructure deployment, it triggers another workflow 
+# (3a.build.yml) for building the application.
+################################################################################
+
+
+name: 2. Infrastructure Deployment
+
+on:
+  workflow_call:
+
+env:
+  AWS_REGION: us-east-1
+  TF_VERSION: 1.4.6
+  TF_ROOT: ./terraform
+  TF_BUCKET_NAME: superfluid-tf-state-bucket
+  TF_TABLE_NAME: superfluid-tf-lock-table
+  TF_STATE_FILE: terraform.tfstate
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  infra:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ env.TF_BUCKET_NAME }}" \
+            -backend-config="key=${{ env.TF_STATE_FILE }}" \
+            -backend-config="region=${{ env.AWS_REGION }}" \
+            -backend-config="dynamodb_table=${{ env.TF_TABLE_NAME }}" \
+            -backend-config="encrypt=true"
+        working-directory: ${{ env.TF_ROOT }}
+
+      - name: Terraform Plan
+        env:
+          TF_VAR_image_tag: ${{ env.IMAGE_TAG }}
+          TF_VAR_sentinel_env: ${{ secrets.SENTINEL_ENV }}
+        run: |
+          terraform plan \
+            -out=plan.out
+        working-directory: ${{ env.TF_ROOT }}
+
+      - name: Terraform Apply
+        run: |
+          terraform apply \
+            -auto-approve \
+            plan.out
+        working-directory: ${{ env.TF_ROOT }}
+
+  build:
+    needs: infra
+    uses: ./.github/workflows/3a.build.yml
+    secrets: inherit

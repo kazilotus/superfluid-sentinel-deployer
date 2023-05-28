@@ -1,0 +1,78 @@
+################################################################################
+# This workflow checks for the existence of a Terraform state lock on each push
+# to the main branch.
+#
+# It uses a Python script to check the lock state. If a lock exists, the
+# workflow triggers the infrastructure deployment workflow (2.infra.yml).
+# If there are no Terraform changes, the application build workflow 
+# (3a.build.yml) is triggered.
+#
+# The workflow uses environment variables for AWS region, Terraform bucket name, 
+# and Terraform table name.
+################################################################################
+
+
+name: 1. Check Terraform State Lock
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  AWS_REGION: us-east-1
+  TF_BUCKET_NAME: superfluid-tf-state-bucket
+  TF_TABLE_NAME: superfluid-tf-lock-table
+
+jobs:
+  check_tf:
+    runs-on: ubuntu-22.04
+    outputs:
+      tfstate_exist: ${{ steps.check.outputs.tfstate_exist }}
+      terraform_changes: ${{ steps.changes.outputs.terraform }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v3
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: pip install boto3
+
+      - name: Execute check script
+        id: check
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+          TFSTATE_BUCKET: ${{ env.TF_BUCKET_NAME }}
+          TFSTATE_LOCK_TABLE: ${{ env.TF_TABLE_NAME }}
+        run: |
+          python ./.github/scripts/check.py
+          echo "tfstate_exist=$?" >> $GITHUB_ENV
+
+      - name: Check for Terraform changes
+        uses: dorny/paths-filter@v2
+        id: changes
+        with:
+          filters: |
+            terraform:
+              - 'terraform/**/*'
+
+  infra:
+    needs: check_tf
+    if: ${{ needs.check_tf.outputs.tfstate_exist == 0 && needs.check_tf.outputs.terraform_changes == 'true' }}
+    uses: ./.github/workflows/2.infra.yml
+    secrets: inherit
+
+  build:
+    needs: check_tf
+    if: ${{ needs.check_tf.outputs.tfstate_exist == 0 && needs.check_tf.outputs.terraform_changes != 'true' }}
+    uses: ./.github/workflows/3a.build.yml
+    secrets: inherit

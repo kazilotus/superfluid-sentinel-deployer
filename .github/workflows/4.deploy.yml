@@ -1,0 +1,63 @@
+################################################################################
+# This workflow is for deploying the application image to AWS ECS (Elastic Container Service) using Terraform.
+# The AWS ECS task is updated with the new image during the deployment.
+# The image to be deployed is passed as an input to the workflow.
+################################################################################
+
+
+name: 4. Application Image Deployment
+
+on:
+  workflow_call:
+    inputs:
+      image:
+        description: 'Sentinel Image to deploy'
+        required: true
+        type: string
+        default: 'superfluid-sentinel:latest'
+
+env:
+  AWS_REGION: us-east-1
+  TF_VERSION: 1.4.6
+  TF_ROOT: ./terraform
+  TF_BUCKET_NAME: superfluid-tf-state-bucket
+  TF_TABLE_NAME: superfluid-tf-lock-table
+  TF_STATE_FILE: terraform.tfstate
+
+jobs:
+  deploy:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ env.TF_BUCKET_NAME }}" \
+            -backend-config="key=${{ env.TF_STATE_FILE }}" \
+            -backend-config="region=${{ env.AWS_REGION }}" \
+            -backend-config="dynamodb_table=${{ env.TF_TABLE_NAME }}" \
+            -backend-config="encrypt=true"
+        working-directory: ${{ env.TF_ROOT }}
+
+      - name: Terraform Apply
+        env:
+          TF_VAR_image_tag: ${{ inputs.image }}
+          TF_VAR_sentinel_env: ${{ secrets.SENTINEL_ENV }}
+        run: |
+          terraform apply -auto-approve
+        working-directory: ${{ env.TF_ROOT }}

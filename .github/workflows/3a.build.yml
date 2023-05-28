@@ -1,0 +1,84 @@
+################################################################################
+# This workflow is responsible for building the application's Docker image.
+# 
+# It checks out the application's repository, configures AWS credentials, 
+# logs into Amazon ECR, and uses Nix to build the Docker image.
+# 
+# After the Docker image is built, it is pushed to Amazon ECR. 
+# 
+# Once the Docker image is pushed, the workflow triggers the 
+# application deployment workflow (4.deploy.yml).
+################################################################################
+
+
+name: 3. Application Image Build
+
+on:
+  workflow_call:
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: superfluid-sentinel
+  TF_VERSION: 1.4.6
+  TF_ROOT: ./terraform
+  TF_BUCKET_NAME: superfluid-tf-state-bucket
+  TF_TABLE_NAME: superfluid-tf-lock-table
+  TF_STATE_FILE: terraform.tfstate
+  SENTINEL_REPO: superfluid-finance/superfluid-sentinel
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    outputs:
+      image_tag: ${{ env.IMAGE_TAG }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Checkout Application Repository
+        uses: actions/checkout@v3
+        with:
+          repository: ${{ env.SENTINEL_REPO }}
+          path: ./app
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Install Nix
+        id: install-nix
+        uses: cachix/install-nix-action@v21
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+
+      - name: Build Docker Image using Nix
+        id: build-image
+        env:
+          NIXPKGS_ALLOW_INSECURE: 1
+        run: |
+          nix-build --option sandbox relaxed build.nix --argstr image_tag ${{ env.IMAGE_TAG }}
+          docker load < result
+
+      - name: Push Image to Amazon ECR
+        id: push-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          docker tag superfluid-sentinel:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+  deploy:
+    needs: build
+    uses: ./.github/workflows/4.deploy.yml
+    secrets: inherit
+    with:
+      image: ${{ needs.build.outputs.image_tag }}
